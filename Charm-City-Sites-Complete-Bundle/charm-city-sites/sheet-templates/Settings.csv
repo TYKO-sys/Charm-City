@@ -1,0 +1,10 @@
+key,value
+telegram_chat_id,
+operator_email,
+operator_name,
+operator_phone,
+daily_cap,10
+autosend,on
+price_default,$500
+operator_address,
+paypal_note,

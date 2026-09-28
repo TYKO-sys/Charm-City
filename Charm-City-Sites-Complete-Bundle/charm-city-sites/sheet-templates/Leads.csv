@@ -1,0 +1,2 @@
+id,business_name,phone,email,neighborhood,source,website_status,slug,site_url,deployed_at,gen_status,copy_json,outreach_status,last_touch,next_touch,price_quoted,notes,website,address,years,deploy_attempts,sent_count,invoice_sent,invoice_sent_at,upsell_sent
+demo-001,Bayview Plumbing Co. (DEMO - delete this row),(410) 555-0142,,,Canton,demo,built,bayview-plumbing-co,https://bayview-plumbing-co.pages.dev,,,ok,,new,,,,Sample row - safe to delete,,,15,0,,,

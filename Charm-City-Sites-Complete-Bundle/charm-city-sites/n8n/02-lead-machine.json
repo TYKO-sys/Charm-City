@@ -1,0 +1,653 @@
+{
+  "name": "02 - Lead Machine (finds, captures, and manages leads)",
+  "nodes": [
+    {
+      "id": "ccs02-01",
+      "name": "Every Morning 07:55",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [-420, -260],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "days",
+              "triggerAtHour": 7,
+              "triggerAtMinute": 55
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "ccs02-02",
+      "name": "Hunt OSM",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [-180, -340],
+      "parameters": {
+        "url": "https://overpass-api.de/api/interpreter?data=%5Bout%3Ajson%5D%5Btimeout%3A25%5D%3B%28node%5B%22shop%22%3D%22plumber%22%5D%2839.15%2C-76.75%2C39.42%2C-76.45%29%3Bway%5B%22shop%22%3D%22plumber%22%5D%2839.15%2C-76.75%2C39.42%2C-76.45%29%3Bnode%5B%22craft%22%3D%22plumber%22%5D%2839.15%2C-76.75%2C39.42%2C-76.45%29%3Bway%5B%22craft%22%3D%22plumber%22%5D%2839.15%2C-76.75%2C39.42%2C-76.45%29%3B%29%3Bout%20center%20tags%3B",
+        "options": {
+          "timeout": 60000
+        }
+      },
+      "onError": "continueRegularOutput",
+      "alwaysOutputData": true
+    },
+    {
+      "id": "ccs02-03",
+      "name": "Lead Intake",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [-420, -40],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "lead-intake",
+        "responseMode": "onReceived",
+        "options": {}
+      },
+      "webhookId": "ccs-lead-intake"
+    },
+    {
+      "id": "ccs02-04",
+      "name": "Bot Commands",
+      "type": "n8n-nodes-base.telegramTrigger",
+      "typeVersion": 1,
+      "position": [-420, 300],
+      "parameters": {
+        "updates": [
+          "message"
+        ]
+      },
+      "credentials": {
+        "Charm City Telegram": {
+          "id": "ccs-telegram",
+          "name": "Charm City Telegram"
+        }
+      }
+    },
+    {
+      "id": "ccs02-05",
+      "name": "Read Settings",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.2,
+      "position": [-180, 20],
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "__SHEET_ID__",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Settings",
+          "mode": "name"
+        },
+        "options": {}
+      },
+      "credentials": {
+        "Charm City Google": {
+          "id": "ccs-google",
+          "name": "Charm City Google"
+        }
+      }
+    },
+    {
+      "id": "ccs02-06",
+      "name": "Settings Map",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [40, 20],
+      "parameters": {
+        "jsCode": "const out = {};\nfor (const item of $input.all()) {\n  const j = item.json || {};\n  if (j.key !== undefined && String(j.key).trim() !== '') {\n    out[String(j.key).trim()] = String(j.value === undefined ? '' : j.value).trim();\n  }\n}\nreturn [{ json: out }];"
+      }
+    },
+    {
+      "id": "ccs02-07",
+      "name": "Normalize OSM",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [60, -340],
+      "parameters": {
+        "jsCode": "const els = ($json.elements || []);\nconst out = [];\nfor (const el of els) {\n  const t = el.tags || {};\n  if (!t.name) continue;\n  out.push({\n    business_name: t.name,\n    phone: t.phone || t['contact:phone'] || '',\n    email: t.email || t['contact:email'] || '',\n    website: t.website || t['contact:website'] || '',\n    address: [t['addr:housenumber'], t['addr:street'], t['addr:city'] || 'Baltimore', t['addr:state'] || 'MD'].filter(Boolean).join(' '),\n    neighborhood: t['addr:suburb'] || t['addr:neighbourhood'] || '',\n    source: 'osm'\n  });\n}\nreturn out.map(x => ({ json: x }));"
+      }
+    },
+    {
+      "id": "ccs02-08",
+      "name": "Normalize Push",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [60, -40],
+      "parameters": {
+        "jsCode": "const j = $json.body || $json;\nconst lead = {\n  business_name: String(j.business_name || '').trim(),\n  phone: String(j.phone || '').trim(),\n  email: String(j.email || '').trim(),\n  website: String(j.website || '').trim(),\n  address: String(j.address || '').trim(),\n  neighborhood: String(j.neighborhood || '').trim(),\n  source: String(j.source || 'push').trim()\n};\nreturn [{ json: lead }];"
+      }
+    },
+    {
+      "id": "ccs02-09",
+      "name": "Handle Command",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [60, 300],
+      "parameters": {
+        "jsCode": "const msg = $json.message || {};\nconst text = String(msg.text || '').trim();\nconst chat = msg.chat && msg.chat.id ? String(msg.chat.id) : '';\nconst from = msg.from && msg.from.username ? '@' + msg.from.username : (msg.from && msg.from.first_name ? msg.from.first_name : 'you');\nconst lc = text.toLowerCase();\nconst HELP = 'Charm City Sites control:\\n' +\n  '/add Business Name | 410-555-0101 | neighborhood - queue a lead\\n' +\n  '/leads - last 10 rows with their ids\\n' +\n  '/status <id> <new|sent|replied|won|dead> - update a lead\\n' +\n  'Your chat id: ' + chat + ' (paste it into the Settings tab if alerts ever go silent)\\n' +\n  'Everything else runs itself.';\nif (lc.startsWith('/add')) {\n  const parts = text.replace(/^\\/add\\s*/i, '').split('|').map(s => s.trim());\n  const lead = {\n    business_name: parts[0] || '',\n    phone: parts[1] || '',\n    email: (parts[2] || '').includes('@') ? parts[2] : '',\n    website: '',\n    address: '',\n    neighborhood: (parts[2] && !String(parts[2]).includes('@')) ? parts[2] : (parts[3] || ''),\n    source: 'telegram:' + from\n  };\n  if (!lead.business_name) return [{ json: { route: 'reply', text: 'Usage: /add Business Name | 410-555-0101 | neighborhood', chat: chat } }];\n  return [{ json: { route: 'lead', lead: lead, chat: chat } }];\n}\nif (lc.startsWith('/leads')) return [{ json: { route: 'sheet', cmd: 'list', chat: chat } }];\nconst m = text.match(/^\\/status\\s+(\\S+)\\s+(\\w+)/i);\nif (m) {\n  const st = m[2].toLowerCase();\n  const allowed = ['new', 'sent', 'replied', 'won', 'dead', 'warm', 'lost'];\n  if (!allowed.includes(st)) return [{ json: { route: 'reply', text: 'Status must be one of: ' + allowed.join(', '), chat: chat } }];\n  return [{ json: { route: 'sheet', cmd: 'status', id: m[1], status: st, chat: chat } }];\n}\nreturn [{ json: { route: 'reply', text: HELP, chat: chat } }];"
+      }
+    },
+    {
+      "id": "ccs02-10",
+      "name": "Is Lead?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [300, 300],
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json.route }}",
+              "value2": "lead"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "ccs02-11",
+      "name": "Ack Command",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1,
+      "position": [540, 420],
+      "parameters": {
+        "chatId": "={{ $('Handle Command').item.json.chat }}",
+        "text": "=Got it. Queueing: {{ $json.lead.business_name }} - checking for duplicates now.",
+        "additionalFields": {}
+      },
+      "credentials": {
+        "Charm City Telegram": {
+          "id": "ccs-telegram",
+          "name": "Charm City Telegram"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "ccs02-12",
+      "name": "Needs Sheet?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [540, 220],
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json.route }}",
+              "value2": "sheet"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "ccs02-13",
+      "name": "Read Leads For Dedupe",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.2,
+      "position": [540, 0],
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "__SHEET_ID__",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Leads",
+          "mode": "name"
+        },
+        "options": {}
+      },
+      "credentials": {
+        "Charm City Google": {
+          "id": "ccs-google",
+          "name": "Charm City Google"
+        }
+      }
+    },
+    {
+      "id": "ccs02-14",
+      "name": "Dedupe",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [780, 0],
+      "parameters": {
+        "jsCode": "const grab = (name) => {\n  try { return $(name).all().map(i => i.json).filter(Boolean); } catch (e) { return []; }\n};\nlet cands = [];\nfor (const x of grab('Normalize OSM')) cands.push(x);\nfor (const x of grab('Normalize Push')) cands.push(x);\nfor (const x of grab('Handle Command')) cands.push(x.lead ? x.lead : null);\ncands = cands.filter(Boolean);\nconst rows = $input.all().map(i => i.json).filter(Boolean);\nconst key = (r) => {\n  const tel = String(r.phone || '').replace(/\\D/g, '');\n  const dom = String(r.website || '').toLowerCase().replace(/^https?:\\/\\//, '').replace(/^www\\./, '').split('/')[0];\n  const nam = String(r.business_name || '').toLowerCase().replace(/[^a-z0-9]/g, '');\n  if (tel.length >= 10) return 'tel:' + (tel.length === 11 && tel[0] === '1' ? tel.slice(1) : tel);\n  if (dom) return 'dom:' + dom;\n  if (nam) return 'nam:' + nam;\n  return null;\n};\nconst existing = new Set(rows.map(key).filter(Boolean));\nconst seen = new Set();\nconst out = [];\nfor (const c of cands) {\n  if (!c.business_name) continue;\n  const k = key(c);\n  if (!k || existing.has(k) || seen.has(k)) continue;\n  seen.add(k);\n  out.push(c);\n}\nreturn out.map(x => ({ json: x }));"
+      }
+    },
+    {
+      "id": "ccs02-15",
+      "name": "Append New",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.2,
+      "position": [1020, 0],
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "__SHEET_ID__",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Leads",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "id": "={{ 'L' + Math.floor(Date.now() / 1000) + '-' + ($itemIndex + 1) }}",
+            "business_name": "={{ $json.business_name }}",
+            "phone": "={{ $json.phone }}",
+            "email": "={{ $json.email }}",
+            "neighborhood": "={{ $json.neighborhood }}",
+            "source": "={{ $json.source }}",
+            "website": "={{ $json.website }}",
+            "address": "={{ $json.address }}",
+            "outreach_status": "new",
+            "last_touch": "={{ new Date().toISOString().slice(0, 10) }}"
+          },
+          "schema": []
+        },
+        "options": {}
+      },
+      "credentials": {
+        "Charm City Google": {
+          "id": "ccs-google",
+          "name": "Charm City Google"
+        }
+      }
+    },
+    {
+      "id": "ccs02-16",
+      "name": "Notify New Leads",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1,
+      "position": [1260, 0],
+      "parameters": {
+        "chatId": "={{ $('Settings Map').first().json.telegram_chat_id || '' }}",
+        "text": "=NEW LEAD: {{ $json.business_name }}{{ $json.phone ? ' | ' + $json.phone : '' }}{{ $json.email ? ' | ' + $json.email : '' }}\nA demo site will build itself within 2 minutes.",
+        "additionalFields": {}
+      },
+      "credentials": {
+        "Charm City Telegram": {
+          "id": "ccs-telegram",
+          "name": "Charm City Telegram"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "ccs02-17",
+      "name": "Read Leads For Command",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.2,
+      "position": [780, 220],
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "__SHEET_ID__",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Leads",
+          "mode": "name"
+        },
+        "options": {}
+      },
+      "credentials": {
+        "Charm City Google": {
+          "id": "ccs-google",
+          "name": "Charm City Google"
+        }
+      }
+    },
+    {
+      "id": "ccs02-18",
+      "name": "Handle Status Or List",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1020, 220],
+      "parameters": {
+        "jsCode": "const c = $('Handle Command').item.json;\nconst rows = $input.all().map(i => i.json).filter(Boolean);\nconst today = new Date().toISOString().slice(0, 10);\nif (c.cmd === 'status') {\n  const row = rows.find(r => String(r.id === undefined ? '' : r.id).trim() === String(c.id).trim());\n  if (!row) return [{ json: { needs_update: false, text: 'No row with id ' + c.id + '. Send /leads to see ids.', chat: c.chat } }];\n  return [{ json: {\n    needs_update: true, id: c.id, status: c.status, today: today, chat: c.chat,\n    text: 'Lead ' + c.id + ' (' + row.business_name + ') -> ' + c.status.toUpperCase() + ' [' + today + ']'\n  } }];\n}\nconst last = rows.slice(-10).reverse();\nconst lines = last.map(r => '#' + r.id + ' ' + r.business_name + ' - ' + (r.outreach_status || 'new') + (r.site_url ? ' - ' + r.site_url : ''));\nreturn [{ json: { needs_update: false, text: 'Last ' + last.length + ' leads:\\n' + lines.join('\\n'), chat: c.chat } }];"
+      }
+    },
+    {
+      "id": "ccs02-19",
+      "name": "Needs Update?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [1260, 220],
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $json.needs_update }}",
+              "value2": true
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "ccs02-20",
+      "name": "Update Status",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.2,
+      "position": [1500, 140],
+      "parameters": {
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "value": "__SHEET_ID__",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Leads",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "id": "={{ $json.id }}",
+            "outreach_status": "={{ $json.status }}",
+            "last_touch": "={{ $json.today }}"
+          },
+          "matchingColumns": [
+            "id"
+          ],
+          "schema": []
+        },
+        "options": {}
+      },
+      "credentials": {
+        "Charm City Google": {
+          "id": "ccs-google",
+          "name": "Charm City Google"
+        }
+      },
+      "onError": "continueRegularOutput",
+      "alwaysOutputData": true
+    },
+    {
+      "id": "ccs02-21",
+      "name": "Reply Command",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1,
+      "position": [1740, 220],
+      "parameters": {
+        "chatId": "={{ $('Handle Command').item.json.chat }}",
+        "text": "={{ $json.text }}",
+        "additionalFields": {}
+      },
+      "credentials": {
+        "Charm City Telegram": {
+          "id": "ccs-telegram",
+          "name": "Charm City Telegram"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "ccs02-22",
+      "name": "Reply Help",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1,
+      "position": [780, 420],
+      "parameters": {
+        "chatId": "={{ $('Handle Command').item.json.chat }}",
+        "text": "={{ $json.text }}",
+        "additionalFields": {}
+      },
+      "credentials": {
+        "Charm City Telegram": {
+          "id": "ccs-telegram",
+          "name": "Charm City Telegram"
+        }
+      },
+      "onError": "continueRegularOutput"
+    }
+  ],
+  "connections": {
+    "Every Morning 07:55": {
+      "main": [
+        [
+          {
+            "node": "Hunt OSM",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Read Settings",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lead Intake": {
+      "main": [
+        [
+          {
+            "node": "Normalize Push",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Read Settings",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Bot Commands": {
+      "main": [
+        [
+          {
+            "node": "Handle Command",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Read Settings",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Settings": {
+      "main": [
+        [
+          {
+            "node": "Settings Map",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Hunt OSM": {
+      "main": [
+        [
+          {
+            "node": "Normalize OSM",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize OSM": {
+      "main": [
+        [
+          {
+            "node": "Read Leads For Dedupe",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Push": {
+      "main": [
+        [
+          {
+            "node": "Read Leads For Dedupe",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Handle Command": {
+      "main": [
+        [
+          {
+            "node": "Is Lead?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is Lead?": {
+      "main": [
+        [
+          {
+            "node": "Read Leads For Dedupe",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Ack Command",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Needs Sheet?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Needs Sheet?": {
+      "main": [
+        [
+          {
+            "node": "Read Leads For Command",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Reply Help",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Leads For Dedupe": {
+      "main": [
+        [
+          {
+            "node": "Dedupe",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Dedupe": {
+      "main": [
+        [
+          {
+            "node": "Append New",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Append New": {
+      "main": [
+        [
+          {
+            "node": "Notify New Leads",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Leads For Command": {
+      "main": [
+        [
+          {
+            "node": "Handle Status Or List",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Handle Status Or List": {
+      "main": [
+        [
+          {
+            "node": "Needs Update?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Needs Update?": {
+      "main": [
+        [
+          {
+            "node": "Update Status",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Reply Command",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Status": {
+      "main": [
+        [
+          {
+            "node": "Reply Command",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {}
+}

@@ -1,0 +1,85 @@
+{
+  "tagline": "Licensed plumber in Canton. We answer the phone, show up, and quote before work starts.",
+  "meta_description": "Bayview Plumbing Co.: licensed plumber in Canton, Baltimore. 24/7 emergency repairs, drains, water heaters, repiping. Upfront pricing, same-day service.",
+  "about": [
+    "Bayview Plumbing Co. has been working pipes around Canton and the rest of Baltimore for 15 years. We're the outfit neighbors call when a drip turns into a flood at 11pm, because we pick up.",
+    "Every job gets a flat-rate quote before work starts. You'll never open an invoice and wonder where the number came from. Licensed, insured, and local enough that our truck is probably already in your neighborhood."
+  ],
+  "services": [
+    {
+      "title": "Emergency repairs",
+      "desc": "Burst pipes, active leaks, no water at all. We drop what we're doing and get to you first.",
+      "price_from": "from $120",
+      "icon": "droplet"
+    },
+    {
+      "title": "Drain cleaning",
+      "desc": "Slow drains, standing water, gunk in the line. Cleared properly, not just pushed further down.",
+      "price_from": "from $99",
+      "icon": "drain"
+    },
+    {
+      "title": "Water heaters",
+      "desc": "Repair or replace, tank or tankless. Cold showers end today, and we haul the old unit away.",
+      "price_from": "from $150",
+      "icon": "flame"
+    },
+    {
+      "title": "Toilets & faucets",
+      "desc": "Running toilets, dripping faucets, bad seals. Small jobs done right, priced before we start.",
+      "price_from": "from $110",
+      "icon": "wrench"
+    },
+    {
+      "title": "Repiping & pipe repair",
+      "desc": "Old galvanized or copper that's given up. We repipe sections or whole homes with minimal wall damage.",
+      "price_from": "from $350",
+      "icon": "pipes"
+    },
+    {
+      "title": "Sewer line & camera",
+      "desc": "Camera down the line so we both see the problem. Root cutting, spot repair, and honest advice.",
+      "price_from": "from $180",
+      "icon": "camera"
+    }
+  ],
+  "faq": [
+    {
+      "q": "Do you charge for estimates?",
+      "a": "No. We look at the problem and give you a flat-rate price before any work starts. If you don't like the number, you owe nothing."
+    },
+    {
+      "q": "How fast can you get here?",
+      "a": "Most same-day. Real emergencies (active leaks, no water) get bumped to the front of the queue, including nights and weekends."
+    },
+    {
+      "q": "Are you licensed and insured?",
+      "a": "Yes. Fully licensed and insured, and we're happy to show the paperwork before we start any job on your home."
+    },
+    {
+      "q": "What areas do you serve?",
+      "a": "We're based in Canton and cover Baltimore City and the close-in county neighborhoods. If you're unsure, call and ask."
+    },
+    {
+      "q": "What payment do you take?",
+      "a": "Cash, check, and card. For bigger jobs we'll talk through payment before we begin so there are no surprises."
+    }
+  ],
+  "reviews": [
+    {
+      "name": "Marcus T.",
+      "area": "Canton",
+      "text": "Water heater died Sunday morning, they were here by noon and I had hot water before dinner. Price was exactly what they quoted on the phone."
+    },
+    {
+      "name": "Dana R.",
+      "area": "Federal Hill",
+      "text": "Two other companies wanted to snake the same drain forever. They put a camera in, found the root, fixed it once. Honest people."
+    },
+    {
+      "name": "Jerome W.",
+      "area": "Parkville",
+      "text": "Showed up on time, shoe covers on, cleaned up completely. Small job but they treated it like it mattered. They've got all my plumbing work now."
+    }
+  ]
+}

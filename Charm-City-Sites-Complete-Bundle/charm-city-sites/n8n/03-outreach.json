@@ -1,0 +1,586 @@
+{
+  "name": "03 - Outreach (morning digest + auto email)",
+  "nodes": [
+    {
+      "id": "ccs03-01",
+      "name": "Every Morning 09:00",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [-420, -160],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "days",
+              "triggerAtHour": 9,
+              "triggerAtMinute": 0
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "ccs03-02",
+      "name": "Read Leads A",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.2,
+      "position": [-160, -160],
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "__SHEET_ID__",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Leads",
+          "mode": "name"
+        },
+        "options": {}
+      },
+      "credentials": {
+        "Charm City Google": {
+          "id": "ccs-google",
+          "name": "Charm City Google"
+        }
+      }
+    },
+    {
+      "id": "ccs03-03",
+      "name": "Read Settings A",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.2,
+      "position": [-160, 40],
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "__SHEET_ID__",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Settings",
+          "mode": "name"
+        },
+        "options": {}
+      },
+      "credentials": {
+        "Charm City Google": {
+          "id": "ccs-google",
+          "name": "Charm City Google"
+        }
+      }
+    },
+    {
+      "id": "ccs03-04",
+      "name": "Settings Map A",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [60, 40],
+      "parameters": {
+        "jsCode": "const out = {};\nfor (const item of $input.all()) {\n  const j = item.json || {};\n  if (j.key !== undefined && String(j.key).trim() !== '') {\n    out[String(j.key).trim()] = String(j.value === undefined ? '' : j.value).trim();\n  }\n}\nreturn [{ json: out }];"
+      }
+    },
+    {
+      "id": "ccs03-05",
+      "name": "Morning Digest",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [80, -160],
+      "parameters": {
+        "jsCode": "const rows = $('Read Leads A').all().map(i => i.json).filter(Boolean);\nconst s = $('Settings Map A').first().json;\nconst today = new Date().toISOString().slice(0, 10);\nconst st = (r) => String(r.outreach_status === undefined ? 'new' : r.outreach_status || 'new').toLowerCase();\nconst fresh = rows.filter(r => st(r) === 'new' && String(r.site_url || ''));\nconst phoneOnly = rows.filter(r => st(r) === 'new' && String(r.site_url || '') && !String(r.email || ''));\nconst due = rows.filter(r => st(r) === 'sent' && String(r.next_touch || '') && String(r.next_touch) <= today && (parseInt(String(r.sent_count || '0'), 10) || 0) < 3);\nconst replied = rows.filter(r => st(r) === 'replied');\nconst errors = rows.filter(r => String(r.website_status || '').toLowerCase() === 'deploy_error' || String(r.gen_status || '').toLowerCase() === 'needs_rewrite');\nconst won = rows.filter(r => st(r) === 'won');\nconst dead = rows.filter(r => st(r) === 'dead');\nconst lines = [];\nlines.push('MORNING REPORT - ' + today + ' - ' + rows.length + ' leads total.');\nif (fresh.length) lines.push('New, ready to email: ' + fresh.length + (fresh.length > 6 ? ' (first 6: ' + fresh.slice(0, 6).map(r => r.business_name).join(', ') + ')' : ' - ' + fresh.map(r => r.business_name).join(', ')));\nif (phoneOnly.length) lines.push('No email, need a text/call: ' + phoneOnly.map(r => r.business_name).join(', '));\nif (due.length) lines.push('Follow-ups due today: ' + due.map(r => '#' + r.id + ' ' + r.business_name).join(', '));\nif (replied.length) lines.push('REPLIES waiting on you: ' + replied.map(r => '#' + r.id + ' ' + r.business_name).join(', '));\nif (errors.length) lines.push('Problem rows: ' + errors.map(r => '#' + r.id + ' ' + r.business_name + ' (' + (r.website_status || r.gen_status) + ')').join(', '));\nlines.push('Won: ' + won.length + ' | Dead: ' + dead.length + ' | Collected target: $2,350');\nlines.push('Autosend: ' + (String(s.autosend || 'on') === 'off' ? 'OFF - drafts come here at 9:11' : 'ON - up to ' + (s.daily_cap || 10) + ' emails go out at 9:11'));\nreturn [{ json: { text: lines.join('\\n') } }];"
+      }
+    },
+    {
+      "id": "ccs03-06",
+      "name": "Send Digest",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1,
+      "position": [320, -160],
+      "parameters": {
+        "chatId": "={{ $('Settings Map A').first().json.telegram_chat_id || '' }}",
+        "text": "={{ $json.text }}",
+        "additionalFields": {}
+      },
+      "credentials": {
+        "Charm City Telegram": {
+          "id": "ccs-telegram",
+          "name": "Charm City Telegram"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "ccs03-07",
+      "name": "Every Morning 09:11",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [-420, 300],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "days",
+              "triggerAtHour": 9,
+              "triggerAtMinute": 11
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "ccs03-08",
+      "name": "Read Leads B",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.2,
+      "position": [-160, 300],
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "__SHEET_ID__",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Leads",
+          "mode": "name"
+        },
+        "options": {}
+      },
+      "credentials": {
+        "Charm City Google": {
+          "id": "ccs-google",
+          "name": "Charm City Google"
+        }
+      }
+    },
+    {
+      "id": "ccs03-09",
+      "name": "Read Settings B",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.2,
+      "position": [-160, 500],
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "__SHEET_ID__",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Settings",
+          "mode": "name"
+        },
+        "options": {}
+      },
+      "credentials": {
+        "Charm City Google": {
+          "id": "ccs-google",
+          "name": "Charm City Google"
+        }
+      }
+    },
+    {
+      "id": "ccs03-10",
+      "name": "Settings Map B",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [60, 500],
+      "parameters": {
+        "jsCode": "const out = {};\nfor (const item of $input.all()) {\n  const j = item.json || {};\n  if (j.key !== undefined && String(j.key).trim() !== '') {\n    out[String(j.key).trim()] = String(j.value === undefined ? '' : j.value).trim();\n  }\n}\nreturn [{ json: out }];"
+      }
+    },
+    {
+      "id": "ccs03-11",
+      "name": "Pick Today's Batch",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [80, 300],
+      "parameters": {
+        "jsCode": "const s = $('Settings Map B').first().json;\nconst cap = parseInt(String(s.daily_cap || '10'), 10) || 10;\nconst today = new Date();\nconst iso = today.toISOString().slice(0, 10);\nconst plusDays = (d, n) => { const x = new Date(d); x.setDate(x.getDate() + n); return x.toISOString().slice(0, 10); };\nconst rows = $input.all().map(i => i.json).filter(Boolean);\nconst st = (r) => String(r.outreach_status === undefined ? 'new' : r.outreach_status || 'new').toLowerCase();\nconst followups = rows.filter(r => st(r) === 'sent' && String(r.next_touch || '') && String(r.next_touch) <= iso && (parseInt(String(r.sent_count || '0'), 10) || 0) < 3 && String(r.email || ''));\nconst fresh = rows.filter(r => st(r) === 'new' && String(r.site_url || '') && String(r.email || ''));\nconst batch = [];\nfor (const r of followups) { if (batch.length >= cap) break; batch.push(r); }\nfor (const r of fresh) { if (batch.length >= cap) break; batch.push(r); }\nconst out = batch.map(r => {\n  const sentCount = parseInt(String(r.sent_count || '0'), 10) || 0;\n  const isF = sentCount > 0 && st(r) === 'sent';\n  const price = String(r.price_quoted || s.price_default || '$500');\n  const body = 'Hi ' + String(r.business_name || 'there') + ',\\n\\n' +\n    'I run Charm City Sites, a one-person web shop here in Baltimore. I build simple sites for home-service businesses and only get paid if you like what you see.\\n\\n' +\n    'So I went ahead and built one for ' + String(r.business_name || 'your shop') + ':\\n' +\n    String(r.site_url || '') + '\\n\\n' +\n    'It loads fast on a phone (that is where your customers are), every button pushes people to call you, and Google can actually read it.\\n\\n' +\n    (isF ? 'Just floating it back to the top of your inbox in case it got buried. ' : '') +\n    'If you like it, it is yours for ' + price + ' and takes a day to put in your name. If not, no hard feelings - you keep the ideas.\\n\\n' +\n    'Reply or call me at ' + String(s.operator_phone || '') + '.\\n\\n' +\n    '- ' + String(s.operator_name || 'Charm City Sites') + '\\nCharm City Sites, Baltimore';\n  return { json: {\n    id: String(r.id === undefined ? '' : r.id),\n    to: String(r.email || ''),\n    name: String(r.business_name || ''),\n    neighborhood: String(r.neighborhood || ''),\n    site_url: String(r.site_url || ''),\n    price: price,\n    type: isF ? 'followup' : 'new',\n    subject: 'A website for ' + String(r.business_name || 'your shop') + ' (already built)',\n    body: body,\n    today: iso,\n    sent_count_new: String(sentCount + 1),\n    next_touch: sentCount + 1 >= 3 ? '' : plusDays(today, sentCount === 0 ? 3 : 7)\n  } };\n});\nreturn out;"
+      }
+    },
+    {
+      "id": "ccs03-12",
+      "name": "One At A Time",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [320, 300],
+      "parameters": {
+        "batchSize": 1,
+        "options": {}
+      }
+    },
+    {
+      "id": "ccs03-13",
+      "name": "Draft Mode?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [560, 300],
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $('Settings Map B').first().json.autosend || 'on' }}",
+              "value2": "off"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "ccs03-14",
+      "name": "Build Brain Command",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [800, 220],
+      "parameters": {
+        "jsCode": "const r = $json;\nconst s = $('Settings Map B').first().json;\nconst system = 'You write short, warm, plain-text cold emails for a one-person Baltimore web shop selling an already-built demo website to a home-service business owner. Max 130 words. Plain words, no hype, no exclamation marks, no emojis, no markdown. End with the signoff line given to you. Never use placeholders like [Name]. Keep the demo URL exactly as given, on its own line.';\nconst user = 'Rewrite this email to be warmer and more specific (mention their neighborhood if known). Facts:\\n' +\n  'business: ' + r.name + '\\nneighborhood: ' + (r.neighborhood || 'Baltimore') + '\\ndemo_url: ' + r.site_url + '\\nprice: ' + r.price + '\\n' +\n  'operator_name: ' + (s.operator_name || 'Charm City Sites') + '\\noperator_phone: ' + (s.operator_phone || '') + '\\ntouch_type: ' + r.type + '\\n\\nCURRENT DRAFT:\\n' + r.body;\nconst b64 = Buffer.from(JSON.stringify({ system: system, user: user, max_tokens: 700 })).toString('base64');\nreturn [{ json: { cmd: 'echo ' + b64 + ' | base64 -d | python3 \"__DIR__/scripts/askbrain.py\" --stdin', draft: r } }];"
+      }
+    },
+    {
+      "id": "ccs03-15",
+      "name": "Ask The Brain",
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [1040, 220],
+      "parameters": {
+        "command": "={{ $json.cmd }}",
+        "executeOnce": true
+      },
+      "onError": "continueRegularOutput",
+      "alwaysOutputData": true
+    },
+    {
+      "id": "ccs03-16",
+      "name": "Compose Email",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1280, 220],
+      "parameters": {
+        "jsCode": "const prev = $('Build Brain Command').item.json.draft;\nlet body = prev.body;\nlet source = 'template';\ntry {\n  const out = JSON.parse(String($json.stdout || '').trim().split('\\n').pop());\n  if (out && out.ok && out.text && String(out.text).trim().length > 40) {\n    body = String(out.text).trim();\n    source = out.source || 'llm';\n  }\n} catch (e) {}\nreturn [{ json: Object.assign({}, prev, { body: body, copy_source: source }) }];"
+      }
+    },
+    {
+      "id": "ccs03-17",
+      "name": "Send Email",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2,
+      "position": [1520, 220],
+      "parameters": {
+        "fromEmail": "={{ $('Settings Map B').first().json.operator_email }}",
+        "toEmail": "={{ $json.to }}",
+        "subject": "={{ $json.subject }}",
+        "emailFormat": "text",
+        "text": "={{ $json.body }}",
+        "options": {}
+      },
+      "credentials": {
+        "Charm City Email": {
+          "id": "ccs-email",
+          "name": "Charm City Email"
+        }
+      },
+      "onError": "continueRegularOutput",
+      "alwaysOutputData": true
+    },
+    {
+      "id": "ccs03-18",
+      "name": "Wait 150s",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [1760, 220],
+      "parameters": {
+        "resume": "timeInterval",
+        "amount": 150,
+        "unit": "seconds"
+      }
+    },
+    {
+      "id": "ccs03-19",
+      "name": "Update Row Sent",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.2,
+      "position": [2000, 220],
+      "parameters": {
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "value": "__SHEET_ID__",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Leads",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "id": "={{ $json.id }}",
+            "outreach_status": "sent",
+            "last_touch": "={{ $json.today }}",
+            "next_touch": "={{ $json.next_touch }}",
+            "sent_count": "={{ $json.sent_count_new }}"
+          },
+          "matchingColumns": [
+            "id"
+          ],
+          "schema": []
+        },
+        "options": {}
+      },
+      "credentials": {
+        "Charm City Google": {
+          "id": "ccs-google",
+          "name": "Charm City Google"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "ccs03-20",
+      "name": "Draft To Telegram",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1,
+      "position": [800, 420],
+      "parameters": {
+        "chatId": "={{ $('Settings Map B').first().json.telegram_chat_id || '' }}",
+        "text": "=DRAFT (autosend is off) for {{ $json.name }} -> {{ $json.to }}\nSubject: {{ $json.subject }}\n\n{{ $json.body }}\n\n---\nSend it from Gmail yourself, then reply /status {{ $json.id }} sent",
+        "additionalFields": {}
+      },
+      "credentials": {
+        "Charm City Telegram": {
+          "id": "ccs-telegram",
+          "name": "Charm City Telegram"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "ccs03-21",
+      "name": "Done For Today",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [560, 560],
+      "parameters": {}
+    }
+  ],
+  "connections": {
+    "Every Morning 09:00": {
+      "main": [
+        [
+          {
+            "node": "Read Leads A",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Read Settings A",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Leads A": {
+      "main": [
+        [
+          {
+            "node": "Morning Digest",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Settings A": {
+      "main": [
+        [
+          {
+            "node": "Settings Map A",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Morning Digest": {
+      "main": [
+        [
+          {
+            "node": "Send Digest",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Every Morning 09:11": {
+      "main": [
+        [
+          {
+            "node": "Read Leads B",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Read Settings B",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Leads B": {
+      "main": [
+        [
+          {
+            "node": "Pick Today's Batch",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Settings B": {
+      "main": [
+        [
+          {
+            "node": "Settings Map B",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Pick Today's Batch": {
+      "main": [
+        [
+          {
+            "node": "One At A Time",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "One At A Time": {
+      "main": [
+        [
+          {
+            "node": "Draft Mode?",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Done For Today",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Draft Mode?": {
+      "main": [
+        [
+          {
+            "node": "Draft To Telegram",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Build Brain Command",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Draft To Telegram": {
+      "main": [
+        [
+          {
+            "node": "One At A Time",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Brain Command": {
+      "main": [
+        [
+          {
+            "node": "Ask The Brain",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ask The Brain": {
+      "main": [
+        [
+          {
+            "node": "Compose Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Compose Email": {
+      "main": [
+        [
+          {
+            "node": "Send Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Email": {
+      "main": [
+        [
+          {
+            "node": "Wait 150s",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait 150s": {
+      "main": [
+        [
+          {
+            "node": "Update Row Sent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Row Sent": {
+      "main": [
+        [
+          {
+            "node": "One At A Time",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {}
+}

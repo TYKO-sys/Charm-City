@@ -1,0 +1,11 @@
+{
+  "id": "demo-001",
+  "business_name": "Bayview Plumbing Co.",
+  "phone": "(410) 555-0142",
+  "email": "",
+  "neighborhood": "Canton",
+  "address": "Canton waterfront, Baltimore, MD 21224",
+  "years": "15",
+  "source": "demo",
+  "notes": "DEMO SITE - fictional business built to show plumbers what they get."
+}

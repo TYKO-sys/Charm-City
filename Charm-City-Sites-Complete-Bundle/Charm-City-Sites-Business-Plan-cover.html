@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700;900&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
+  <style>
+    @page { size: 794px 1123px; margin: 0; }
+    :root {
+      --c-bg: #f1f2f3;
+      --c-accent: #266a8b;
+      --c-text: #191a1b;
+      --c-muted: #707679;
+      --c-mid: #334853;
+      --c-surface: #edeeef;
+    }
+    html, body {
+      margin: 0; padding: 0;
+      width: 794px; height: 1123px;
+      background: var(--c-bg);
+      color: var(--c-text);
+      font-family: 'Inter', sans-serif;
+    }
+    @media screen {
+      html { height: auto; display: flex; justify-content: center; min-height: 100vh; background: var(--c-bg); }
+      body { transform-origin: top center; scale: min(1, calc(100vw / 794), calc(100vh / 1123)); margin: 0 auto; box-shadow: 0 0 60px rgba(0,0,0,0.12); }
+    }
+    .cover { width: 794px; height: 1123px; position: relative; box-sizing: border-box; border: none; outline: none; box-shadow: none; }
+
+    /* Layer 1: background grid (clipped) */
+    .layer-1 {
+      position: absolute; inset: 0; overflow: hidden; z-index: 1;
+      background-image:
+        repeating-linear-gradient(to right, rgba(51,72,83,0.03) 0px, rgba(51,72,83,0.03) 0.5px, transparent 0.5px, transparent 64px),
+        repeating-linear-gradient(to bottom, rgba(51,72,83,0.03) 0px, rgba(51,72,83,0.03) 0.5px, transparent 0.5px, transparent 64px);
+    }
+
+    /* Layer 2: structure - thick left anchor line */
+    .layer-2 { position: absolute; inset: 0; z-index: 2; }
+    .anchor-line {
+      position: absolute;
+      left: 95px;
+      top: 112px;
+      bottom: 112px;
+      width: 8px;
+      background: var(--c-mid);
+    }
+
+    /* Layer 3: content */
+    .layer-3 { position: absolute; inset: 0; z-index: 3; }
+    .kicker {
+      position: absolute;
+      left: 175px; top: 168px;
+      font-size: 16pt; font-weight: 400;
+      letter-spacing: 4px;
+      text-transform: uppercase;
+      color: var(--c-accent);
+      opacity: 0.6;
+    }
+    .hero-title {
+      position: absolute;
+      left: 175px; top: 337px;
+      font-family: 'Playfair Display', serif;
+      font-size: 54pt; font-weight: 900;
+      line-height: 1.15;
+      color: var(--c-mid);
+      max-width: 508px;
+    }
+    .summary {
+      position: absolute;
+      left: 175px; top: 562px;
+      font-size: 16.5pt; font-weight: 300;
+      line-height: 1.6;
+      color: var(--c-text);
+      opacity: 0.85;
+      max-width: 476px;
+    }
+    .meta {
+      position: absolute;
+      left: 175px; top: 842px;
+    }
+    .meta .for {
+      font-size: 18pt; font-weight: 500;
+      color: var(--c-text);
+      margin-bottom: 14px;
+    }
+    .meta .date {
+      font-size: 15pt; font-weight: 400;
+      color: var(--c-muted);
+      letter-spacing: 1px;
+    }
+  </style>
+</head>
+<body>
+  <div class="cover">
+    <div class="layer-1"></div>
+    <div class="layer-2">
+      <div class="anchor-line"></div>
+    </div>
+    <div class="layer-3">
+      <div class="kicker">Business Plan &middot; Plain English</div>
+      <div class="hero-title">Charm City<br>Sites</div>
+      <div class="summary">A one-person website factory for Baltimore's trades. This plan explains, in everyday words, what it does, who it serves, how it earns its first $2,350, and how it all gets built.</div>
+      <div class="meta">
+        <div class="for">Prepared for the operator and family</div>
+        <div class="date">Baltimore, Maryland &middot; September 2026</div>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

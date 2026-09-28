@@ -1,0 +1,347 @@
+{
+  "name": "05 - Form Alerts (hot leads + replies)",
+  "nodes": [
+    {
+      "id": "ccs05-01",
+      "name": "Watch Inbox",
+      "type": "n8n-nodes-base.emailReadImap",
+      "typeVersion": 2,
+      "position": [-380, 0],
+      "parameters": {
+        "mailbox": "INBOX",
+        "postProcessAction": "read",
+        "format": "simple",
+        "options": {}
+      },
+      "pollTimes": {
+        "item": [
+          {
+            "mode": "everyMinute"
+          }
+        ]
+      },
+      "credentials": {
+        "Charm City IMAP": {
+          "id": "ccs-imap",
+          "name": "Charm City IMAP"
+        }
+      }
+    },
+    {
+      "id": "ccs05-02",
+      "name": "From FormSubmit?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [-140, 0],
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json.from || JSON.stringify($json) }}",
+              "value2": "formsubmit"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "ccs05-03",
+      "name": "Extract Form Lead",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [100, -120],
+      "parameters": {
+        "jsCode": "const j = $json;\nconst raw = [j.subject, j.textPlain, j.textBody, j.text, j.body].filter(Boolean).join('\\n');\nconst pick = (field) => {\n  const m = String(raw).match(new RegExp(field + '[\"\\\\s:=]+([^\\\\n\\\\r]{1,160})', 'i'));\n  return m ? m[1].trim() : '';\n};\nconst site = pick('site');\nconst name = pick('name');\nconst phone = pick('phone');\nconst service = pick('service');\nconst message = pick('message');\nreturn [{ json: {\n  site: site, name: name, phone: phone, service: service, message: message,\n  text: 'HOT LEAD on ' + (site || 'a demo site') + ':\\n' +\n    (name || 'someone') + (phone ? ' (' + phone + ')' : '') + '\\n' +\n    (service ? 'Needs: ' + service + '\\n' : '') +\n    (message ? '\"' + message.slice(0, 160) + '\"' : '') + '\\n' +\n    'Open the site, forward this to the plumber, use it in your pitch.'\n}}];"
+      }
+    },
+    {
+      "id": "ccs05-04",
+      "name": "Alert Hot Lead",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1,
+      "position": [340, -120],
+      "parameters": {
+        "chatId": "={{ $('Read Settings').first().json.telegram_chat_id || '' }}",
+        "text": "={{ $json.text }}",
+        "additionalFields": {}
+      },
+      "credentials": {
+        "Charm City Telegram": {
+          "id": "ccs-telegram",
+          "name": "Charm City Telegram"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "ccs05-05",
+      "name": "Read Settings",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.2,
+      "position": [-380, 240],
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "__SHEET_ID__",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Settings",
+          "mode": "name"
+        },
+        "options": {}
+      },
+      "credentials": {
+        "Charm City Google": {
+          "id": "ccs-google",
+          "name": "Charm City Google"
+        }
+      }
+    },
+    {
+      "id": "ccs05-06",
+      "name": "Settings Map",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-140, 240],
+      "parameters": {
+        "jsCode": "const out = {};\nfor (const item of $input.all()) {\n  const j = item.json || {};\n  if (j.key !== undefined && String(j.key).trim() !== '') {\n    out[String(j.key).trim()] = String(j.value === undefined ? '' : j.value).trim();\n  }\n}\nreturn [{ json: out }];"
+      }
+    },
+    {
+      "id": "ccs05-07",
+      "name": "Read Leads For Match",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.2,
+      "position": [100, 120],
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "__SHEET_ID__",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Leads",
+          "mode": "name"
+        },
+        "options": {}
+      },
+      "credentials": {
+        "Charm City Google": {
+          "id": "ccs-google",
+          "name": "Charm City Google"
+        }
+      }
+    },
+    {
+      "id": "ccs05-08",
+      "name": "Match Reply",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [340, 120],
+      "parameters": {
+        "jsCode": "const j = $('Watch Inbox').first().json;\nconst body = [j.subject, j.textPlain, j.textBody, j.text, j.body].filter(Boolean).join(' ');\nconst from = String(j.from || '');\nconst fm = from.match(/<([^>]+)>/);\nconst sender = String((fm && fm[1]) || from).toLowerCase().trim();\nconst rows = $input.all().map(i => i.json).filter(Boolean);\nconst row = rows.find(r => String(r.email || '').toLowerCase().trim() === sender);\nif (!row) return [{ json: { matched: false } }];\nreturn [{ json: {\n  matched: true,\n  id: String(row.id === undefined ? '' : row.id),\n  name: String(row.business_name || ''),\n  subject: String(j.subject || ''),\n  snippet: String(body).slice(0, 180),\n  today: new Date().toISOString().slice(0, 10)\n}}];"
+      }
+    },
+    {
+      "id": "ccs05-09",
+      "name": "Matched?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [580, 120],
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $json.matched }}",
+              "value2": true
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "ccs05-10",
+      "name": "Update Replied",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.2,
+      "position": [820, 60],
+      "parameters": {
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "value": "__SHEET_ID__",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Leads",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "id": "={{ $json.id }}",
+            "outreach_status": "replied",
+            "last_touch": "={{ $json.today }}"
+          },
+          "matchingColumns": [
+            "id"
+          ],
+          "schema": []
+        },
+        "options": {}
+      },
+      "credentials": {
+        "Charm City Google": {
+          "id": "ccs-google",
+          "name": "Charm City Google"
+        }
+      },
+      "onError": "continueRegularOutput",
+      "alwaysOutputData": true
+    },
+    {
+      "id": "ccs05-11",
+      "name": "Alert Reply",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1,
+      "position": [1060, 60],
+      "parameters": {
+        "chatId": "={{ $('Settings Map').first().json.telegram_chat_id || '' }}",
+        "text": "=REPLY from {{ $json.name }} - \"{{ $json.subject }}\"\nOpen your inbox and call them back today.\nRow {{ $json.id }} marked replied.",
+        "additionalFields": {}
+      },
+      "credentials": {
+        "Charm City Telegram": {
+          "id": "ccs-telegram",
+          "name": "Charm City Telegram"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "ccs05-12",
+      "name": "Ignore Other Mail",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [820, 220],
+      "parameters": {}
+    }
+  ],
+  "connections": {
+    "Watch Inbox": {
+      "main": [
+        [
+          {
+            "node": "From FormSubmit?",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Read Settings",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Settings": {
+      "main": [
+        [
+          {
+            "node": "Settings Map",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "From FormSubmit?": {
+      "main": [
+        [
+          {
+            "node": "Extract Form Lead",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Read Leads For Match",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Form Lead": {
+      "main": [
+        [
+          {
+            "node": "Alert Hot Lead",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Leads For Match": {
+      "main": [
+        [
+          {
+            "node": "Match Reply",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Match Reply": {
+      "main": [
+        [
+          {
+            "node": "Matched?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Matched?": {
+      "main": [
+        [
+          {
+            "node": "Update Replied",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Ignore Other Mail",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Replied": {
+      "main": [
+        [
+          {
+            "node": "Alert Reply",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {}
+}

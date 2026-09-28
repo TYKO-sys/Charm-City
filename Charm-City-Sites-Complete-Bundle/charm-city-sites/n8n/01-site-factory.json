@@ -1,0 +1,505 @@
+{
+  "name": "01 - Site Factory (builds and deploys sites)",
+  "nodes": [
+    {
+      "id": "ccs01-01",
+      "name": "Every 2 Minutes",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [-320, 0],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 2
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "ccs01-02",
+      "name": "Read Leads",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.2,
+      "position": [-80, 0],
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "__SHEET_ID__",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Leads",
+          "mode": "name"
+        },
+        "options": {}
+      },
+      "credentials": {
+        "Charm City Google": {
+          "id": "ccs-google",
+          "name": "Charm City Google"
+        }
+      }
+    },
+    {
+      "id": "ccs01-03",
+      "name": "Read Settings",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.2,
+      "position": [-80, 240],
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "__SHEET_ID__",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Settings",
+          "mode": "name"
+        },
+        "options": {}
+      },
+      "credentials": {
+        "Charm City Google": {
+          "id": "ccs-google",
+          "name": "Charm City Google"
+        }
+      }
+    },
+    {
+      "id": "ccs01-04",
+      "name": "Settings Map",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [160, 240],
+      "parameters": {
+        "jsCode": "const out = {};\nfor (const item of $input.all()) {\n  const j = item.json || {};\n  if (j.key !== undefined && j.key !== null && String(j.key).trim() !== '') {\n    out[String(j.key).trim()] = String(j.value === undefined ? '' : j.value).trim();\n  }\n}\nreturn [{ json: out }];"
+      }
+    },
+    {
+      "id": "ccs01-05",
+      "name": "Find Rows To Build",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [160, 0],
+      "parameters": {
+        "jsCode": "const rows = $input.all().map(i => i.json).filter(Boolean);\nconst skip = ['built', 'handed_off', 'deploy_error', 'building'];\nconst out = rows.filter(r =>\n  String(r.business_name || '').trim() &&\n  !skip.includes(String(r.website_status || '').trim().toLowerCase())\n);\nreturn out.map(r => ({ json: r }));"
+      }
+    },
+    {
+      "id": "ccs01-06",
+      "name": "One At A Time",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [400, 0],
+      "parameters": {
+        "batchSize": 1,
+        "options": {}
+      }
+    },
+    {
+      "id": "ccs01-07",
+      "name": "Build Command",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [640, 0],
+      "parameters": {
+        "jsCode": "const r = $json;\nconst attempts = parseInt(String(r.deploy_attempts || '0'), 10) || 0;\nconst b64 = Buffer.from(JSON.stringify({\n  id: r.id, business_name: r.business_name, phone: r.phone, email: r.email,\n  neighborhood: r.neighborhood, address: r.address, years: r.years,\n  slug: r.slug, notes: r.notes, source: r.source\n})).toString('base64');\nreturn [{ json: {\n  cmd: 'echo ' + b64 + ' | base64 -d | python3 \"__DIR__/scripts/generate_site.py\" --stdin',\n  lead_id: String(r.id === undefined ? '' : r.id),\n  attempts: attempts,\n  name: String(r.business_name || '')\n}}];"
+      }
+    },
+    {
+      "id": "ccs01-08",
+      "name": "Generate Site",
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [880, 0],
+      "parameters": {
+        "command": "={{ $json.cmd }}",
+        "executeOnce": true
+      },
+      "onError": "continueRegularOutput",
+      "alwaysOutputData": true
+    },
+    {
+      "id": "ccs01-09",
+      "name": "Parse Build",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1120, 0],
+      "parameters": {
+        "jsCode": "let out = { ok: false, error: 'no stdout' };\ntry {\n  out = JSON.parse(String($json.stdout || $json.error || '').trim().split('\\n').pop());\n} catch (e) { out = { ok: false, error: String($json.stderr || $json.error || e) }; }\nconst b = $('Build Command').item.json;\nreturn [{ json: Object.assign({}, out, {\n  lead_id: b.lead_id, attempts: b.attempts, name: b.name\n}) }];"
+      }
+    },
+    {
+      "id": "ccs01-10",
+      "name": "Built OK?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [1360, 0],
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $json.ok }}",
+              "value2": true
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "ccs01-11",
+      "name": "Deploy Site",
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [1600, -140],
+      "parameters": {
+        "command": "=bash __DIR__/scripts/deploy.sh {{ $json.slug }}",
+        "executeOnce": true
+      },
+      "onError": "continueRegularOutput",
+      "alwaysOutputData": true
+    },
+    {
+      "id": "ccs01-12",
+      "name": "Parse Deploy",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1840, -140],
+      "parameters": {
+        "jsCode": "let out = { ok: false, error: 'no stdout' };\ntry {\n  out = JSON.parse(String($json.stdout || '').trim().split('\\n').pop());\n} catch (e) { out = { ok: false, error: String($json.stderr || e) }; }\nconst prev = $('Parse Build').item.json;\nconst now = new Date().toISOString().slice(0, 10);\nreturn [{ json: {\n  id: prev.lead_id, name: prev.name, attempts: prev.attempts,\n  gen_status: prev.gen_status || '', copy_source: prev.copy_source || '',\n  slug: out.slug || prev.slug || '',\n  site_url: out.ok ? String(out.url || '') : '',\n  website_status: out.ok ? 'built' : (prev.attempts >= 1 ? 'deploy_error' : ''),\n  deployed_at: out.ok ? now : '',\n  deploy_attempts: String(prev.attempts + 1),\n  built_ok: out.ok,\n  error: out.ok ? '' : String(out.error || 'deploy failed').slice(0, 120)\n}}];"
+      }
+    },
+    {
+      "id": "ccs01-13",
+      "name": "Deployed OK?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [2080, -140],
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $json.built_ok }}",
+              "value2": true
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "ccs01-14",
+      "name": "Update Success",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.2,
+      "position": [2320, -200],
+      "parameters": {
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "value": "__SHEET_ID__",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Leads",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "id": "={{ $json.id }}",
+            "website_status": "={{ $json.website_status }}",
+            "slug": "={{ $json.slug }}",
+            "site_url": "={{ $json.site_url }}",
+            "deployed_at": "={{ $json.deployed_at }}",
+            "gen_status": "={{ $json.gen_status }}",
+            "deploy_attempts": "={{ $json.deploy_attempts }}"
+          },
+          "matchingColumns": [
+            "id"
+          ],
+          "schema": []
+        },
+        "options": {}
+      },
+      "credentials": {
+        "Charm City Google": {
+          "id": "ccs-google",
+          "name": "Charm City Google"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "ccs01-15",
+      "name": "Notify Built",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1,
+      "position": [2560, -200],
+      "parameters": {
+        "chatId": "={{ $('Settings Map').first().json.telegram_chat_id || '' }}",
+        "text": "=SITE LIVE: {{ $json.name }}\nURL: {{ $json.site_url }}\nCopy source: {{ $json.copy_source }} ({{ $json.gen_status }})\nNext move: text the demo link to the plumber.",
+        "additionalFields": {}
+      },
+      "credentials": {
+        "Charm City Telegram": {
+          "id": "ccs-telegram",
+          "name": "Charm City Telegram"
+        }
+      },
+      "onError": "continueRegularOutput",
+      "alwaysOutputData": true
+    },
+    {
+      "id": "ccs01-16",
+      "name": "Update With Error",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.2,
+      "position": [2320, 120],
+      "parameters": {
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "value": "__SHEET_ID__",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Leads",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "id": "={{ $json.lead_id || $json.id }}",
+            "website_status": "={{ $json.website_status || 'deploy_error' }}",
+            "deploy_attempts": "={{ String((parseInt(String($json.deploy_attempts || $json.attempts || '0'), 10) || 0) + 1) }}",
+            "gen_status": "={{ $json.gen_status || ('error: ' + String($json.error || '').slice(0, 90)) }}"
+          },
+          "matchingColumns": [
+            "id"
+          ],
+          "schema": []
+        },
+        "options": {}
+      },
+      "credentials": {
+        "Charm City Google": {
+          "id": "ccs-google",
+          "name": "Charm City Google"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "ccs01-17",
+      "name": "Idle",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [2560, 340],
+      "parameters": {}
+    }
+  ],
+  "connections": {
+    "Every 2 Minutes": {
+      "main": [
+        [
+          {
+            "node": "Read Leads",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Read Settings",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Leads": {
+      "main": [
+        [
+          {
+            "node": "Find Rows To Build",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Settings": {
+      "main": [
+        [
+          {
+            "node": "Settings Map",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Find Rows To Build": {
+      "main": [
+        [
+          {
+            "node": "One At A Time",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "One At A Time": {
+      "main": [
+        [
+          {
+            "node": "Build Command",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Idle",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Command": {
+      "main": [
+        [
+          {
+            "node": "Generate Site",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Site": {
+      "main": [
+        [
+          {
+            "node": "Parse Build",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Build": {
+      "main": [
+        [
+          {
+            "node": "Built OK?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Built OK?": {
+      "main": [
+        [
+          {
+            "node": "Deploy Site",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Update With Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Deploy Site": {
+      "main": [
+        [
+          {
+            "node": "Parse Deploy",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Deploy": {
+      "main": [
+        [
+          {
+            "node": "Deployed OK?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Deployed OK?": {
+      "main": [
+        [
+          {
+            "node": "Update Success",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Update With Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Success": {
+      "main": [
+        [
+          {
+            "node": "Notify Built",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Notify Built": {
+      "main": [
+        [
+          {
+            "node": "One At A Time",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update With Error": {
+      "main": [
+        [
+          {
+            "node": "One At A Time",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {}
+}
